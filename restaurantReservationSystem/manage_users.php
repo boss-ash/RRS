@@ -1,49 +1,55 @@
 <?php
-/**
- * Savory Haven Restaurant - Admin Panel - Users Management Page
- * Displays and handles basic CRUD operations for the adminPanel_users table.
- * Accessible only by 'super admin'.
- */
 
-// This file assumes admin.php has already:
-// - Started the session
-// - Included config.php (which provides $conn, is_logged_in, check_permission, redirect_with_message)
-// - Checked for administrator authentication
-// - Defined the $page variable
+require_once 'config.php';
+require_once 'admin.php';
 
-// --- Check if the user has 'super admin' permission to view this page ---
 if (!check_permission('super_admin')) {
-    // If not super admin, redirect to dashboard or show an error
     redirect_with_message('dashboard', 'error', 'You do not have permission to access user management.');
-    exit; // Stop script execution
+    exit;
 }
 
-
-// --- FETCH USERS FOR DISPLAY ---
 $users = [];
-// Assuming $conn is open and authenticated check has passed
-if ($conn) {
-    // Fetch all users from the adminPanel_users table
-    // IMPORTANT: NEVER select the password_hash here for display!
-    $sql = "SELECT id, username, role, full_name, email, created_at, updated_at FROM adminPanel_users ORDER BY id ASC";
-    $result = $conn->query($sql);
 
-    if ($result) {
-        if ($result->num_rows > 0) {
-            while($row = $result->fetch_assoc()) {
-                $users[] = $row;
-            }
+
+$reconnect_needed = false;
+
+if (!isset($conn) || !is_object($conn)) {
+    $reconnect_needed = true;
+} elseif (get_class($conn) !== 'mysqli') {
+    $reconnect_needed = true;
+} else {
+    try {
+        if (!$conn->ping()) {
+            $reconnect_needed = true;
         }
-        $result->free();
-    } else {
-        echo "<div class='alert alert-danger'>Error fetching users: " . $conn->error . "</div>";
-        error_log("Error fetching users: " . $conn->error);
+    } catch (Throwable $e) {
+        $reconnect_needed = true;
+    }
+}
+
+if ($reconnect_needed) {
+    error_log("Reconnecting to database...");
+    $conn = new mysqli("localhost", "root", "", "rrs");
+
+    if ($conn->connect_error) {
+        die("Reconnect failed: " . $conn->connect_error);
     }
 }
 
 
-// --- HTML for Users Management Page ---
-// This HTML will be included directly into the main-content div of admin.php
+$sql = "SELECT id, username, role, full_name, email, created_at, updated_at FROM adminPanel_users ORDER BY id ASC";
+$result = $conn->query($sql);
+
+if ($result) {
+    if ($result->num_rows > 0) {
+        while ($row = $result->fetch_assoc()) {
+            $users[] = $row;
+        }
+    }
+    $result->free();
+} else {
+    echo "<div class='alert alert-danger'>Query Error: " . $conn->error . "</div>";
+}
 ?>
 
 <div class="row justify-content-between align-items-center mb-4">
@@ -101,17 +107,16 @@ if ($conn) {
                                         <i class="fas fa-edit"></i> Edit
                                     </a>
 
-                                    <?php // Delete User Form - posts back to admin.php ?>
+                                    <?php  ?>
                                     <?php // Only show delete if NOT the current logged in user and has super admin permission ?>
-                                    <?php if ($user['id'] != $_SESSION['user_id'] && check_permission('super_admin')): ?>
-                                        <form action="" method="post" class="d-inline delete-user-form">
-                                            <input type="hidden" name="action" value="delete_user">
-                                            <input type="hidden" name="user_id" value="<?php echo $user['id']; ?>">
-                                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete User">
-                                                <i class="fas fa-trash-alt"></i> Delete
-                                            </button>
+                                    <?php if ($user['role'] !== 'Super_admin'): ?>
+                                    <form action="delete_user.php" method="POST" style="display:inline;" onsubmit="return confirm('Are you sure you want to delete this user?');">
+                                   <input type="hidden" name="user_id" value="<?php echo $user['id']; ?>">
+                                  <button type="submit" class="btn btn-sm btn-outline-danger">
+                                   <i class="fas fa-trash" style="color: red;"></i> Delete
+                                        </button>
                                         </form>
-                                    <?php endif; ?>
+                                    <?php endif; ?> 
                                 </td>
                             </tr>
                         <?php endforeach; ?>
